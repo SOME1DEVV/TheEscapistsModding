@@ -24,6 +24,15 @@ import argparse, hashlib, shutil, sys, re
 def md5_size(sz):
     return hashlib.md5(("l0l_%d" % sz).encode()).hexdigest()
 
+def sniff_enc(b):
+    if b.startswith(b"\xff\xfe"):
+        return "utf-16-le"
+    if b.startswith(b"\xfe\xff"):
+        return "utf-16-be"
+    if b[:400].count(b"\x00") > 40:  # много нулей => UTF-16 без BOM
+        return "utf-16-le"
+    return "utf-8"
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--items", required=True)
@@ -33,15 +42,29 @@ def main():
     ap.add_argument("--no-val", action="store_true")
     a = ap.parse_args()
 
-    block = open(a.block, "rb").read()
+    raw_block = open(a.block, "rb").read()
     data = open(a.items, "rb").read()
 
+    enc = sniff_enc(data)
+    # блок у нас в UTF-8; перекодируем в кодировку самого файла (UTF-16 или UTF-8)
+    try:
+        btxt = raw_block.decode("utf-8-sig")
+    except Exception:
+        btxt = raw_block.decode("utf-16-le", "replace")
+    if enc.startswith("utf-16"):
+        btxt = btxt.replace("\r\n", "\n")
+        block = btxt.encode("utf-16-le")
+        nl = b"\n\x00"
+    else:
+        block = btxt.encode("utf-8")
+        nl = b"\n"
+
     shutil.copy(a.items, a.items + ".bak")
-    if not data.endswith(b"\n"):
-        data += b"\n"
+    if not data.endswith(nl):
+        data += nl
     new = data + block
     open(a.items, "wb").write(new)
-    print(f"items: было {len(data)} -> стало {len(new)}  (+{len(new)-len(data)})")
+    print(f"items: было {len(data)} -> стало {len(new)}  (+{len(new)-len(data)})  [кодировка {enc}]")
 
     if a.val and not a.no_val:
         shutil.copy(a.val, a.val + ".bak")
