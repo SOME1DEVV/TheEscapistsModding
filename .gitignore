@@ -1,0 +1,5 @@
+# рабочие/тяжёлые данные — не в git
+extracted/
+work/
+__pycache__/
+*.pyc
